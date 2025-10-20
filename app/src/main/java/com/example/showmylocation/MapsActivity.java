@@ -9,6 +9,7 @@ import androidx.fragment.app.FragmentActivity;
 import android.Manifest;
 import android.content.DialogInterface;
 import android.content.pm.PackageManager;
+import android.content.SharedPreferences;
 import android.location.Location;
 import android.os.Bundle;
 import android.widget.EditText;
@@ -23,8 +24,9 @@ import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.MarkerOptions;
 import com.example.showmylocation.databinding.ActivityMapsBinding;
 
-import java.util.ArrayList;
-import java.util.List;
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 public class MapsActivity extends FragmentActivity implements OnMapReadyCallback {
 
@@ -33,8 +35,8 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
     private FusedLocationProviderClient fusedLocationClient;
 
     private static final int LOCATION_PERMISSION_REQUEST_CODE = 1;
-
-    private List<PinnedLocation> pinnedLocations = new ArrayList<>();
+    private static final String PREFS_NAME = "PinnedLocationsPrefs";
+    private static final String KEY_LOCATIONS = "PinnedLocations";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -63,7 +65,9 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
                     LOCATION_PERMISSION_REQUEST_CODE);
         }
 
-        mMap.setOnMapClickListener(latLng -> showAddMarkerDialog(latLng));
+        loadPinnedLocations();
+
+        mMap.setOnMapClickListener(this::showAddMarkerDialog);
     }
 
     private void showAddMarkerDialog(LatLng latLng) {
@@ -77,11 +81,8 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
         builder.setPositiveButton("Add", (dialog, which) -> {
             String name = input.getText().toString().trim();
             if (!name.isEmpty()) {
-                // Add marker on map
                 mMap.addMarker(new MarkerOptions().position(latLng).title(name));
-
-                // Save in list
-                pinnedLocations.add(new PinnedLocation(name, latLng.latitude, latLng.longitude));
+                savePinnedLocation(name, latLng.latitude, latLng.longitude);
             }
         });
 
@@ -109,6 +110,43 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
                 });
     }
 
+    private void savePinnedLocation(String name, double latitude, double longitude) {
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        String existingData = prefs.getString(KEY_LOCATIONS, "[]");
+
+        try {
+            JSONArray jsonArray = new JSONArray(existingData);
+            JSONObject locationObj = new JSONObject();
+            locationObj.put("name", name);
+            locationObj.put("latitude", latitude);
+            locationObj.put("longitude", longitude);
+            jsonArray.put(locationObj);
+
+            prefs.edit().putString(KEY_LOCATIONS, jsonArray.toString()).apply();
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void loadPinnedLocations() {
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        String savedData = prefs.getString(KEY_LOCATIONS, "[]");
+
+        try {
+            JSONArray jsonArray = new JSONArray(savedData);
+            for (int i = 0; i < jsonArray.length(); i++) {
+                JSONObject obj = jsonArray.getJSONObject(i);
+                String name = obj.getString("name");
+                double latitude = obj.getDouble("latitude");
+                double longitude = obj.getDouble("longitude");
+                LatLng latLng = new LatLng(latitude, longitude);
+                mMap.addMarker(new MarkerOptions().position(latLng).title(name));
+            }
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+    }
+
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions,
                                            @NonNull int[] grantResults) {
@@ -118,18 +156,6 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 showUserLocation();
             }
-        }
-    }
-
-    private static class PinnedLocation {
-        String name;
-        double latitude;
-        double longitude;
-
-        PinnedLocation(String name, double latitude, double longitude) {
-            this.name = name;
-            this.latitude = latitude;
-            this.longitude = longitude;
         }
     }
 }
